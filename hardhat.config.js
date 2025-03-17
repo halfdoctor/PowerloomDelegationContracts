@@ -36,6 +36,18 @@ export default {
     }
   },
   etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY // If needed for verification
+    apiKey: {
+      'powerloom-mainnet': 'empty'
+    },
+    customChains: [
+      {
+        network: "powerloom-mainnet",
+        chainId: 7865,
+        urls: {
+          apiURL: "https://explorer-powerloom-mainnet-hdsv5hx40a.t.conduit.xyz/api",
+          browserURL: "https://explorer-powerloom-mainnet-hdsv5hx40a.t.conduit.xyz:443"
+        }
+      }
+    ]
   }
 };

@@ -11,7 +11,7 @@ async function main() {
   console.log("Deploying PowerLoomDelegation...");
 
   // Get the contract factory
-  const PowerLoomDelegation = await ethers.getContractFactory("PowerloomDelegation");
+  const PowerLoomDelegation = await ethers.getContractFactory("PowerloomDelegation2");
 
   // Deploy the implementation and proxy
   const powerloomDelegation = await PowerLoomDelegation.deploy(
@@ -22,7 +22,7 @@ async function main() {
 
   await powerloomDelegation.waitForDeployment();
 
-  console.log("PowerLoomDelegation deployed to:", await powerloomDelegation.getAddress());
+  console.log("PowerLoomDelegation2 deployed to:", await powerloomDelegation.getAddress());
 }
 
 main()
@@ -31,3 +31,5 @@ main()
     console.error(error);
     process.exit(1);
   });
+
+  //npx hardhat verify --network power 0xD0be140f645aC0b3756Af386CDf75c3467fAc50C 0x670E0Cf8c8dF15B326D5E2Db4982172Ff8504909 0x0B91dAD5CcE2E91AFE1f794Ec9f4A6b19F67F512 0x5872a748D5D71c242e66409510FE2212bDd021a1
