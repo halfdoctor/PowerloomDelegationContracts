@@ -24,38 +24,36 @@ describe("PowerloomDelegation2", function () {
         // Get signers
         [owner, addr1, addr2, addr3, addr4, burnerWallet] = await ethers.getSigners();
     
-        // Fund addr1 with enough Ether
+        // Fund accounts with smaller amounts (100 ETH instead of 1000)
         await owner.sendTransaction({
             to: addr1.address,
-            value: ethers.parseEther("1000"),
+            value: ethers.parseEther("100"),
         }); 
-        // Send a large amount of Ether to the owner from addr1
+        
         await addr3.sendTransaction({
             to: owner.address,
-            value: ethers.parseEther("1000"),
+            value: ethers.parseEther("100"),
         });
-
-        // Send a large amount of Ether to the owner from addr1
+    
         await addr4.sendTransaction({
             to: addr2.address,
-            value: ethers.parseEther("1000"),
+            value: ethers.parseEther("100"),
         });
-   
+    
         try {
-            // Mock PowerloomNodes contract
+            // Mock PowerloomNodes contract with explicit gasLimit
             const MockPowerloomNodes = await ethers.getContractFactory("MockPowerloomNodes");
-            mockPowerloomNodes = await MockPowerloomNodes.deploy({gasLimit: 1000000});
+            mockPowerloomNodes = await MockPowerloomNodes.deploy();
             await mockPowerloomNodes.waitForDeployment();
-            //console.log("PowerloomNodes deployed at:", mockPowerloomNodes.target); // Log deployment address
         } catch (error) {
             console.error("Error deploying MockPowerloomNodes:", error);
-            throw error; // Re-throw to fail the test setup
+            throw error;
         }
     
         MockPowerloomState = await ethers.getContractFactory("MockPowerloomState");
         mockPowerloomState = await MockPowerloomState.deploy();
     
-        // Deploy PowerloomDelegation2
+        // Deploy PowerloomDelegation2 with explicit gasLimit
         PowerloomDelegation2 = await ethers.getContractFactory("PowerloomDelegation2");
         powerloomDelegation2 = await PowerloomDelegation2.deploy(
             await mockPowerloomState.getAddress(),
