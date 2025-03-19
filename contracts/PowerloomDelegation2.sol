@@ -301,6 +301,13 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
         return delegations[msg.sender][slotId];
     }
 
+    /// @notice Retrieves delegation information for a specific slot and account address
+    /// @param slotId The ID of the slot to query
+    /// @return DelegationInfo struct containing delegation details
+    function getDelegationInfoByAccount(address account, uint256 slotId) external view returns (DelegationInfo memory) {
+        return delegations[account][slotId];
+    }
+
     /// @notice Gets remaining time for a delegation
     /// @param slotId The ID of the slot to check
     /// @return Remaining time in seconds, 0 if expired or inactive
@@ -362,6 +369,8 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
         if (excess > 0) {
             payable(msg.sender).transfer(excess);
         }
+
+        totalActiveDelegations ++;
         
         // Update delegation period
         delegation.startTime = block.timestamp;
@@ -412,7 +421,7 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
             address slotOwner = powerloomNodes.nodeIdToOwner(slotId);
             require(slotOwner == msg.sender, "Caller is not the slot owner");
 
-            
+            totalActiveDelegations ++;
             
             // Update delegation period
             delegation.startTime = block.timestamp;
