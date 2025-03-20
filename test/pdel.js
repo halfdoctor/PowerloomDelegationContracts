@@ -4,9 +4,8 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 const { ethers } = pkg;
 
-describe("PowerloomDelegation", function () {
-    let PowerloomDelegation;
-    let powerloomDelegation;
+describe("PowerloomDelegationold", function () {
+    let PowerloomDelegationold;
     let mockPowerloomNodes;
     let MockPowerloomState;
     let mockPowerloomState;
@@ -37,9 +36,9 @@ describe("PowerloomDelegation", function () {
         MockPowerloomState = await ethers.getContractFactory("MockPowerloomState");
         mockPowerloomState = await MockPowerloomState.deploy();
 
-        // Deploy PowerloomDelegation
-        PowerloomDelegation = await ethers.getContractFactory("PowerloomDelegation");
-        powerloomDelegation = await PowerloomDelegation.deploy(
+        // Deploy PowerloomDelegationold
+        PowerloomDelegationold = await ethers.getContractFactory("PowerloomDelegationold");
+        PowerloomDelegationold = await PowerloomDelegationold.deploy(
             await mockPowerloomState.getAddress(),
             await mockPowerloomNodes.getAddress(),
             burnerWallet.address
@@ -60,17 +59,17 @@ describe("PowerloomDelegation", function () {
       });
   
       it("Should return correct delegation info", async function () {
-          await powerloomDelegation.connect(addr1).createDelegation([1], { value: DELEGATION_FEE });
-          const delegationInfo = await powerloomDelegation.connect(addr1).getDelegationInfo(1);
+          await PowerloomDelegationold.connect(addr1).createDelegation([1], { value: DELEGATION_FEE });
+          const delegationInfo = await PowerloomDelegationold.connect(addr1).getDelegationInfo(1);
           expect(delegationInfo.burnerWallet).to.equal(burnerWallet.address);
           expect(delegationInfo.slotId).to.equal(1);
           expect(delegationInfo.active).to.be.true;
       });
   
       it("Should return correct delegation time remaining", async function () {
-          await powerloomDelegation.connect(addr1).createDelegation([1], { value: DELEGATION_FEE });
-          const delegationInfo = await powerloomDelegation.connect(addr1).getDelegationInfo(1);
-          const timeRemaining = await powerloomDelegation.connect(addr1).getDelegationTimeRemaining(1);
+          await PowerloomDelegationold.connect(addr1).createDelegation([1], { value: DELEGATION_FEE });
+          const delegationInfo = await PowerloomDelegationold.connect(addr1).getDelegationInfo(1);
+          const timeRemaining = await PowerloomDelegationold.connect(addr1).getDelegationTimeRemaining(1);
           
           // Ensure delegation is active and time remaining is correct
           expect(delegationInfo.active).to.be.true;
@@ -84,7 +83,7 @@ describe("PowerloomDelegation", function () {
           await mockPowerloomState.setSnapshotter(4, burnerWallet.address);
           
           // Create delegation with addr1 and slot 4
-          await powerloomDelegation.connect(addr1).createDelegation([4], {
+          await PowerloomDelegationold.connect(addr1).createDelegation([4], {
               value: DELEGATION_FEE
           });
       
@@ -92,31 +91,31 @@ describe("PowerloomDelegation", function () {
           await time.increase(DELEGATION_PERIOD + 1);
       
           // Check expiry
-          await powerloomDelegation.connect(addr1).checkDelegationExpiry(4);
+          await PowerloomDelegationold.connect(addr1).checkDelegationExpiry(4);
       
           // Verify delegation is now inactive
-          const delegationInfo = await powerloomDelegation.getDelegationInfo(4);
+          const delegationInfo = await PowerloomDelegationold.getDelegationInfo(4);
           expect(delegationInfo.active).to.be.false;
       });
 
       it("Should fail to renew a non-existent delegation", async function () {
-          await expect(powerloomDelegation.connect(addr1).renewDelegation(99, { value: DELEGATION_FEE }))
+          await expect(PowerloomDelegationold.connect(addr1).renewDelegation(99, { value: DELEGATION_FEE }))
               .to.be.revertedWith("Delegation does not exist");
       });
 
       it("Should renew delegation correctly and emit DelegationStateChanged event", async function () {
             // First create a delegation
-            await powerloomDelegation.connect(addr1).createDelegation([2], { value: DELEGATION_FEE });
+            await PowerloomDelegationold.connect(addr1).createDelegation([2], { value: DELEGATION_FEE });
             
             // Get initial delegation info
-            const initialDelegationInfo = await powerloomDelegation.connect(addr1).getDelegationInfo(2);
+            const initialDelegationInfo = await PowerloomDelegationold.connect(addr1).getDelegationInfo(2);
             const initialEndTime = initialDelegationInfo.endTime;
         
             // Increase time to near the end of delegation period
             await time.increase(DELEGATION_PERIOD - 1000); // Leave some buffer
         
             // Renew the delegation
-            const renewTx = await powerloomDelegation.connect(addr1).renewDelegation(2, { value: DELEGATION_FEE });
+            const renewTx = await PowerloomDelegationold.connect(addr1).renewDelegation(2, { value: DELEGATION_FEE });
             
             // Get the transaction receipt
             const receipt = await renewTx.wait();
@@ -128,7 +127,7 @@ describe("PowerloomDelegation", function () {
             expect(event).to.not.be.undefined;
             
             // Verify delegation was renewed correctly
-            const newDelegationInfo = await powerloomDelegation.connect(addr1).getDelegationInfo(2);
+            const newDelegationInfo = await PowerloomDelegationold.connect(addr1).getDelegationInfo(2);
             expect(newDelegationInfo.active).to.be.true;
             expect(newDelegationInfo.endTime).to.be.gt(initialEndTime);
         });
@@ -139,13 +138,13 @@ describe("PowerloomDelegation", function () {
             const totalFee = DELEGATION_FEE * BigInt(numSlots);
         
             // First create the delegations
-            await powerloomDelegation.connect(addr1).createDelegation(slotIds, { value: totalFee });
+            await PowerloomDelegationold.connect(addr1).createDelegation(slotIds, { value: totalFee });
         
             // Increase time to near the end of delegation period
             await time.increase(DELEGATION_PERIOD - 1000); // Leave some buffer
         
             // Renew the delegations
-            const renewTx = await powerloomDelegation.connect(addr1).batchRenewDelegations(slotIds, { value: totalFee });
+            const renewTx = await PowerloomDelegationold.connect(addr1).batchRenewDelegations(slotIds, { value: totalFee });
             
             // Get the transaction receipt
             const receipt = await renewTx.wait();
@@ -158,7 +157,7 @@ describe("PowerloomDelegation", function () {
         
             // Check each delegation was renewed properly
             for (let i = 0; i < numSlots; i++) {
-                const newDelegationInfo = await powerloomDelegation.connect(addr1).getDelegationInfo(i + 1);
+                const newDelegationInfo = await PowerloomDelegationold.connect(addr1).getDelegationInfo(i + 1);
                 expect(newDelegationInfo.active).to.be.true;
                 expect(newDelegationInfo.endTime).to.be.gt(await time.latest());
             }

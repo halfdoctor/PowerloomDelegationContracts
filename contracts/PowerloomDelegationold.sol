@@ -17,13 +17,13 @@ interface IPowerloomState {
 /// @title PowerLoomDelegation
 /// @notice Contract for managing delegations in the PowerLoom protocol
 /// @dev Implements delegation functionality with fee management and time-based expiry
-contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
-    // keccak256(abi.encodePacked(delegator, slotId)) => commitmentHash
+contract PowerloomDelegationold is Ownable, ReentrancyGuard, Pausable {
     // ... state variables ...
     IPowerloomState public immutable powerloomState;
     IPowerloomNodes public immutable powerloomNodes;
 
-    uint256 public BASE_DELEGATION_FEE_PER_DAY = 10 ether; // native currency units
+    uint256 public DELEGATION_FEE = 300 ether; // native currency units
+    uint256 public DELEGATION_PERIOD = 30 days;
     address public BURNER_WALLET; 
     uint256 public constant MAX_SLOTS_PER_DELEGATION = 10; 
     uint256 public totalActiveDelegations;
@@ -46,7 +46,7 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
     }
 
     mapping(address => mapping(uint256 => DelegationInfo)) public delegations; // delegator => slotId => DelegationInfo
-    mapping(address => mapping(uint256 => bool)) private userSlotIdsMap; // Tracks if a user has a slot delegated
+    mapping(address => uint256[]) private userSlotIds; // Tracks all slots delegated by a user
 
     event DelegationCreated(
         address indexed delegator,
@@ -105,27 +105,16 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
     /// @notice Creates new delegations for multiple slot IDs
     /// @dev Requires payment of delegation fee per slot
     /// @param slotIds Array of slot IDs to delegate
-    /// @param delegationPeriodInDays The delegation period in days
-    function createDelegation(uint256[] calldata slotIds, uint256 delegationPeriodInDays) external payable nonReentrant whenNotPaused {
-        require(delegationPeriodInDays > 0, "Delegation period must be greater than zero");
-        require(delegationPeriodInDays <= 365, "Delegation period must be less than or equal to 365 days");
+    function createDelegation(uint256[] calldata slotIds) external payable nonReentrant whenNotPaused {
         uint256 totalSlots = slotIds.length;
         require(totalSlots > 0, "No slots provided");
         require(totalSlots <= MAX_SLOTS_PER_DELEGATION, "Too many slots");
 
-        uint256 multiplier;
-        if (delegationPeriodInDays > 30) {
-            multiplier = 100; // 1.00
-        } else {
-            multiplier = 150 - (delegationPeriodInDays - 1) * 50 / 29; // Linear interpolation between 1.50 and 1.00
-        }
-        uint256 totalFee = BASE_DELEGATION_FEE_PER_DAY * delegationPeriodInDays * totalSlots * multiplier;
-        totalFee = totalFee / 100;
-        require(msg.value >= totalFee, "Incorrect delegation fee");
+        uint256 totalFee = DELEGATION_FEE * totalSlots;
+        require(msg.value == totalFee, "Incorrect delegation fee");
 
         for (uint256 i = 0; i < totalSlots; i++) {
             uint256 slotId = slotIds[i];
-            require(slotId < 10001, "Slot ID exceeds maximum limit");
 
             // Ensure no duplicate slotId within the same function call
             for (uint256 j = i + 1; j < totalSlots; j++) {
@@ -144,113 +133,76 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
             require(snapshotterAddress != address(0), "Invalid snapshotter address");
             require(snapshotterAddress == BURNER_WALLET, "Burner wallet not set correctly");
 
-            // Refund excess fee
-            if (msg.value > totalFee) {
-                (bool success, ) = payable(msg.sender).call{value: msg.value - totalFee}("");
-                require(success, "Transfer failed.");
-            }
-
             // Store delegation details
             delegations[msg.sender][slotId] = DelegationInfo({
                 burnerWallet: BURNER_WALLET,
                 slotId: slotId,
                 startTime: block.timestamp,
-                endTime: block.timestamp + delegationPeriodInDays * 1 days,
+                endTime: block.timestamp + DELEGATION_PERIOD,
                 active: true
             });
 
             _addUserSlotId(msg.sender, slotId);
 
             totalActiveDelegations++;
+
             emit DelegationCreated(
                 msg.sender,
                 slotId,
                 BURNER_WALLET,
                 block.timestamp,
-                block.timestamp + delegationPeriodInDays * 1 days
+                block.timestamp + DELEGATION_PERIOD
             );
-
-            _checkAndDecrementExpiredDelegations(msg.sender);
         }
     }
 
     /// @notice Adds a slot ID to user's delegation list
     /// @dev Internal function called during delegation creation
     function _addUserSlotId(address user, uint256 slotId) internal {
-        // Add slot ID to the user's mapping
-        userSlotIdsMap[user][slotId] = true;
+        // Check if slot ID already exists in the user's array
+        uint256[] storage userSlots = userSlotIds[user];
+        for (uint256 i = 0; i < userSlots.length; i++) {
+            if (userSlots[i] == slotId) {
+                return; // Slot ID already exists, do nothing
+            }
+        }
+        
+        // Add slot ID if it doesn't exist
+        userSlots.push(slotId);
     }
 
     /// @notice Gets the total number of delegations for a user
     /// @param user Address of the user to query
     /// @return Total number of delegations (active and inactive)
-    function getTotalUserDelegations(address user) internal view returns (uint256) {
-        uint256 count = 0;
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                count++;
-            }
-        }
-        return count;
+    function getTotalUserDelegations(address user) external view returns (uint256) {
+        return userSlotIds[user].length;
     }
 
     /// @notice Gets all delegations for a specific user with their current status
     /// @param user Address of the user to query
     /// @return DelegationStatus[] Array of delegation status information
     function getUserDelegations(address user) external view returns (DelegationStatus[] memory) {
-        uint256 totalDelegations = getTotalUserDelegations(user);
-        DelegationStatus[] memory statuses = new DelegationStatus[](totalDelegations);
-        uint256 currentIndex = 0;
-
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                DelegationInfo memory delegation = delegations[user][i];
-                uint256 timeRemaining = 0;
-                if (delegation.active && block.timestamp < delegation.endTime) {
-                    timeRemaining = delegation.endTime - block.timestamp;
-                }
-
-                statuses[currentIndex] = DelegationStatus({
-                    slotId: i,
-                    isActive: delegation.active && block.timestamp < delegation.endTime,
-                    endTime: delegation.endTime,
-                    timeRemaining: timeRemaining,
-                    burnerWallet: delegation.burnerWallet
-                });
-                currentIndex++;
+        uint256[] memory slots = userSlotIds[user];
+        DelegationStatus[] memory statuses = new DelegationStatus[](slots.length);
+        
+        for (uint256 i = 0; i < slots.length; i++) {
+            uint256 slotId = slots[i];
+            DelegationInfo memory delegation = delegations[user][slotId];
+            
+            uint256 timeRemaining = 0;
+            if (delegation.active && block.timestamp < delegation.endTime) {
+                timeRemaining = delegation.endTime - block.timestamp;
             }
+            
+            statuses[i] = DelegationStatus({
+                slotId: slotId,
+                isActive: delegation.active && block.timestamp < delegation.endTime,
+                endTime: delegation.endTime,
+                timeRemaining: timeRemaining,
+                burnerWallet: delegation.burnerWallet
+            });
         }
-
-        return statuses;
-    }
-
-    /// @notice Gets all delegations for a specific user with their current status
-    /// @param user Address of the user to query
-    /// @return DelegationStatus[] Array of delegation status information
-    function _getUserDelegations(address user) internal view returns (DelegationStatus[] memory) {
-        uint256 totalDelegations = getTotalUserDelegations(user);
-        DelegationStatus[] memory statuses = new DelegationStatus[](totalDelegations);
-        uint256 currentIndex = 0;
-
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                DelegationInfo memory delegation = delegations[user][i];
-                uint256 timeRemaining = 0;
-                if (delegation.active && block.timestamp < delegation.endTime) {
-                    timeRemaining = delegation.endTime - block.timestamp;
-                }
-
-                statuses[currentIndex] = DelegationStatus({
-                    slotId: i,
-                    isActive: delegation.active && block.timestamp < delegation.endTime,
-                    endTime: delegation.endTime,
-                    timeRemaining: timeRemaining,
-                    burnerWallet: delegation.burnerWallet
-                });
-                currentIndex++;
-            }
-        }
-
+        
         return statuses;
     }
 
@@ -258,40 +210,38 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
     /// @param user Address of the user to query
     /// @return DelegationStatus[] Array of active delegation status information
     function getActiveDelegations(address user) external view returns (DelegationStatus[] memory) {
-        // uint256 totalDelegations = getTotalUserDelegations(user);
-        uint256 activeCount = 0;
-
+        uint256[] memory slots = userSlotIds[user];
+        
         // First, count active delegations
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                DelegationInfo memory delegation = delegations[user][i];
-                if (delegation.active && block.timestamp < delegation.endTime) {
-                    activeCount++;
-                }
+        uint256 activeCount = 0;
+        for (uint256 i = 0; i < slots.length; i++) {
+            DelegationInfo memory delegation = delegations[user][slots[i]];
+            if (delegation.active && block.timestamp < delegation.endTime) {
+                activeCount++;
             }
         }
-
+        
         // Create array with exact size needed
         DelegationStatus[] memory activeStatuses = new DelegationStatus[](activeCount);
-
+        
         // Fill array with active delegations
         uint256 currentIndex = 0;
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                DelegationInfo memory delegation = delegations[user][i];
-                if (delegation.active && block.timestamp < delegation.endTime) {
-                    activeStatuses[currentIndex] = DelegationStatus({
-                        slotId: i,
-                        isActive: true,
-                        endTime: delegation.endTime,
-                        timeRemaining: delegation.endTime - block.timestamp,
-                        burnerWallet: delegation.burnerWallet
-                    });
-                    currentIndex++;
-                }
+        for (uint256 i = 0; i < slots.length; i++) {
+            uint256 slotId = slots[i];
+            DelegationInfo memory delegation = delegations[user][slotId];
+            
+            if (delegation.active && block.timestamp < delegation.endTime) {
+                activeStatuses[currentIndex] = DelegationStatus({
+                    slotId: slotId,
+                    isActive: true,
+                    endTime: delegation.endTime,
+                    timeRemaining: delegation.endTime - block.timestamp,
+                    burnerWallet: delegation.burnerWallet
+                });
+                currentIndex++;
             }
         }
-
+        
         return activeStatuses;
     }
     /// @notice Retrieves delegation information for a specific slot
@@ -299,13 +249,6 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
     /// @return DelegationInfo struct containing delegation details
     function getDelegationInfo(uint256 slotId) external view returns (DelegationInfo memory) {
         return delegations[msg.sender][slotId];
-    }
-
-    /// @notice Retrieves delegation information for a specific slot and account address
-    /// @param slotId The ID of the slot to query
-    /// @return DelegationInfo struct containing delegation details
-    function getDelegationInfoByAccount(address account, uint256 slotId) external view returns (DelegationInfo memory) {
-        return delegations[account][slotId];
     }
 
     /// @notice Gets remaining time for a delegation
@@ -330,7 +273,6 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
             if (totalActiveDelegations > 0) {
                 totalActiveDelegations--;
             }
-            
             emit DelegationStateChanged(
                 msg.sender,
                 slotId,
@@ -343,38 +285,23 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
 
     /// @notice Renews an existing delegation for another period
     /// @param slotId The ID of the slot to renew
-    function renewDelegation(uint256 slotId, uint256 delegationPeriodInDays) external payable nonReentrant whenNotPaused {
-        require(delegationPeriodInDays > 0, "Delegation period must be greater than zero");
-        require(delegationPeriodInDays <= 365, "Delegation period must be less than or equal to 365 days");
-
+    function renewDelegation(uint256 slotId) external payable nonReentrant whenNotPaused {
         DelegationInfo storage delegation = delegations[msg.sender][slotId];
-        require(delegation.active, "Delegation not active");
-        require(slotId < 10001, "Slot ID exceeds maximum limit");
-
-        uint256 multiplier;
-        if (delegationPeriodInDays > 30) {
-            multiplier = 100; // 1.00
-        } else {
-            multiplier = 150 - (delegationPeriodInDays - 1) * 50 / 29; // Linear interpolation between 1.50 and 1.00
-        }
-        uint256 totalFee = BASE_DELEGATION_FEE_PER_DAY * delegationPeriodInDays * multiplier;
-        totalFee = totalFee / 100;
-        require(msg.value >= totalFee, "Insufficient delegation fee");
+        require(delegation.slotId == slotId, "Delegation does not exist"); // Check if delegation exists
+        require(msg.value >= DELEGATION_FEE, "Insufficient delegation fee");
         
         // Check if caller is still the owner of the slot
         address slotOwner = powerloomNodes.nodeIdToOwner(slotId);
         require(slotOwner == msg.sender, "Caller is not the slot owner");
-
-        uint256 excess = msg.value - totalFee;
+        
+        uint256 excess = msg.value - DELEGATION_FEE;
         if (excess > 0) {
             payable(msg.sender).transfer(excess);
         }
-
-        totalActiveDelegations ++;
         
         // Update delegation period
         delegation.startTime = block.timestamp;
-        delegation.endTime = block.timestamp + delegationPeriodInDays * 1 days;
+        delegation.endTime = block.timestamp + DELEGATION_PERIOD;
         delegation.active = true; // Ensure it's reactivated
         
         emit DelegationStateChanged(
@@ -384,48 +311,31 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
             block.timestamp,
             "renewed"
         );
-
-        _checkAndDecrementExpiredDelegations(msg.sender);
-    }
+    }       
 
     /// @notice Renews multiple delegations at once
     /// @param slotIds Array of slot IDs to renew
-    function batchRenewDelegations(uint256[] calldata slotIds, uint256 delegationPeriodInDays) external payable nonReentrant whenNotPaused {
-        require(delegationPeriodInDays > 0, "Delegation period must be greater than zero");
-        require(delegationPeriodInDays <= 365, "Delegation period must be less than or equal to 365 days");
-
+    function batchRenewDelegations(uint256[] calldata slotIds) external payable nonReentrant whenNotPaused {
         uint256 totalSlots = slotIds.length;
         require(totalSlots > 0, "No slots provided");
         require(totalSlots <= MAX_SLOTS_PER_DELEGATION, "Too many slots");
         
-        uint256 multiplier;
-        if (delegationPeriodInDays > 30) {
-            multiplier = 100; // 1.00
-        } else {
-            multiplier = 150 - (delegationPeriodInDays - 1) * 50 / 29; // Linear interpolation between 1.50 and 1.00
-        }
-        uint256 totalFee = BASE_DELEGATION_FEE_PER_DAY * delegationPeriodInDays * totalSlots * multiplier;
-        totalFee = totalFee / 100;
-        require(msg.value >= totalFee, "Incorrect delegation fee");
+        uint256 totalFee = DELEGATION_FEE * totalSlots;
+        require(msg.value == totalFee, "Incorrect delegation fee");
         
-        uint256 excess = msg.value - totalFee;
-
         for (uint256 i = 0; i < totalSlots; i++) {
             uint256 slotId = slotIds[i];
-            require(slotId < 10001, "Slot ID exceeds maximum limit");
             DelegationInfo storage delegation = delegations[msg.sender][slotId];
             
-            //require(delegation.slotId == slotId, "Delegation does not exist");
+            require(delegation.slotId == slotId, "Delegation does not exist");
             
             // Check if caller is still the owner of the slot
             address slotOwner = powerloomNodes.nodeIdToOwner(slotId);
             require(slotOwner == msg.sender, "Caller is not the slot owner");
-
-            totalActiveDelegations ++;
             
             // Update delegation period
             delegation.startTime = block.timestamp;
-            delegation.endTime = block.timestamp + delegationPeriodInDays * 1 days;
+            delegation.endTime = block.timestamp + DELEGATION_PERIOD;
             delegation.active = true;
             
             emit DelegationStateChanged(
@@ -436,12 +346,6 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
                 "renewed"
             );
         }
-
-        if (excess > 0) {
-            payable(msg.sender).transfer(excess);
-        }
-
-        _checkAndDecrementExpiredDelegations(msg.sender);
     }
 
     /// @notice Allows a user to manually cancel a delegation
@@ -453,11 +357,9 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
         // Check if caller is still the owner of the slot
         address slotOwner = powerloomNodes.nodeIdToOwner(slotId);
         require(slotOwner == msg.sender, "Caller is not the slot owner");
+        
         delegation.active = false;
-        userSlotIdsMap[msg.sender][slotId] = false;
-        if (totalActiveDelegations > 0) {
-            totalActiveDelegations = totalActiveDelegations - 1;
-        }
+        totalActiveDelegations--;
         
         emit DelegationStateChanged(
             msg.sender,
@@ -466,8 +368,6 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
             block.timestamp,
             "cancelled"
         );
-
-        _checkAndDecrementExpiredDelegations(msg.sender);
     }
 
     /// @notice Checks and updates expiry status for multiple delegations
@@ -500,8 +400,6 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
     /// @notice Emergency function to withdraw any ERC20 tokens accidentally sent to the contract
     /// @param tokenAddress Address of the token to withdraw
     function emergencyWithdrawToken(address tokenAddress, uint256 amount) external onlyOwner {
-        require(tokenAddress != address(this), "Cannot withdraw ETH from the contract itself");
-        require(amount > 0, "Cannot withdraw zero amount");
         IERC20 token = IERC20(tokenAddress);
         require(token.transfer(owner(), amount), "Transfer failed");
     }
@@ -512,7 +410,8 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
         uint256 balance = address(this).balance;
         require(balance > 0, "No fees to withdraw");
 
-        payable(owner()).transfer(balance);
+        (bool success, ) = payable(owner()).call{value: balance}("");
+        require(success, "Withdraw failed");
 
         emit FeeEvent(owner(), balance, "withdrawn", block.timestamp);
     }
@@ -532,9 +431,19 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
     /// @dev Can only be called by contract owner
     function updateDelegationFee(uint256 newFee) external onlyOwner whenNotPaused {
         require(newFee > 0, "Fee cannot be zero");
-        uint256 oldFee = BASE_DELEGATION_FEE_PER_DAY;
-        BASE_DELEGATION_FEE_PER_DAY = newFee;
+        uint256 oldFee = DELEGATION_FEE;
+        DELEGATION_FEE = newFee;
         emit DelegationFeeUpdated(oldFee, newFee);
+    }
+
+    /// @notice Updates the delegation period duration
+    /// @param newPeriod New period duration in seconds
+    /// @dev Can only be called by contract owner
+    function updateDelegationPeriod(uint256 newPeriod) external onlyOwner whenNotPaused {
+        require(newPeriod > 0, "Period cannot be zero");
+        uint256 oldPeriod = DELEGATION_PERIOD;
+        DELEGATION_PERIOD = newPeriod;
+        emit DelegationPeriodUpdated(oldPeriod, newPeriod);
     }
 
     /// @notice Handles direct ETH transfers to the contract
@@ -547,29 +456,5 @@ contract PowerloomDelegation2 is Ownable, ReentrancyGuard, Pausable {
     /// @dev Emits FeeReceived event for any ETH received
     fallback() external payable {
         emit FeeEvent(msg.sender, msg.value, "received", block.timestamp);
-    }
-
-    /// @notice Internal function to check and decrement expired delegations
-    /// @param user Address of the user to check delegations for
-    function _checkAndDecrementExpiredDelegations(address user) private {
-        DelegationStatus[] memory userDelegations = _getUserDelegations(user);
-        for (uint256 i = 0; i < userDelegations.length; i++) {
-            uint256 slotId = userDelegations[i].slotId;
-            DelegationInfo storage delegation = delegations[user][slotId];
-            if (delegation.active && block.timestamp >= delegation.endTime) {
-                delegation.active = false;
-                userSlotIdsMap[user][slotId] = false;
-                if (totalActiveDelegations > 0) {
-                    totalActiveDelegations--;
-                }
-                emit DelegationStateChanged(
-                    user,
-                    slotId,
-                    false,
-                    block.timestamp,
-                    "expired"
-                );
-            }
-        }
     }
 }

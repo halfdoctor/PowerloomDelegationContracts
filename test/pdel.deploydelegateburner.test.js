@@ -4,9 +4,8 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 const { ethers } = pkg;
 
-describe("PowerloomDelegation", function () {
-    let PowerloomDelegation;
-    let powerloomDelegation;
+describe("PowerloomDelegationold", function () {
+    let PowerloomDelegationold;
     let mockPowerloomNodes;
     let MockPowerloomState;
     let mockPowerloomState;
@@ -37,9 +36,9 @@ describe("PowerloomDelegation", function () {
         MockPowerloomState = await ethers.getContractFactory("MockPowerloomState");
         mockPowerloomState = await MockPowerloomState.deploy();
 
-        // Deploy PowerloomDelegation
-        PowerloomDelegation = await ethers.getContractFactory("PowerloomDelegation");
-        powerloomDelegation = await PowerloomDelegation.deploy(
+        // Deploy PowerloomDelegationold
+        PowerloomDelegationold = await ethers.getContractFactory("PowerloomDelegationold");
+        PowerloomDelegationold = await PowerloomDelegationold.deploy(
             await mockPowerloomState.getAddress(),
             await mockPowerloomNodes.getAddress(),
             burnerWallet.address
@@ -48,15 +47,15 @@ describe("PowerloomDelegation", function () {
 
     describe("Deployment", function () {
         it("Should set the right owner", async function () {
-            expect(await powerloomDelegation.owner()).to.equal(owner.address);
+            expect(await PowerloomDelegationold.owner()).to.equal(owner.address);
         });
 
         it("Should set the correct burner wallet", async function () {
-            expect(await powerloomDelegation.BURNER_WALLET()).to.equal(burnerWallet.address);
+            expect(await PowerloomDelegationold.BURNER_WALLET()).to.equal(burnerWallet.address);
         });
 
         it("Should set the correct delegation fee", async function () {
-            expect(await powerloomDelegation.DELEGATION_FEE()).to.equal(DELEGATION_FEE);
+            expect(await PowerloomDelegationold.DELEGATION_FEE()).to.equal(DELEGATION_FEE);
         });
     });
 
@@ -68,16 +67,16 @@ describe("PowerloomDelegation", function () {
         });
 
         it("Should create delegation with correct fee", async function () {
-            await expect(powerloomDelegation.connect(addr1).createDelegation([1], {
+            await expect(PowerloomDelegationold.connect(addr1).createDelegation([1], {
                 value: DELEGATION_FEE
             }))
-                .to.emit(powerloomDelegation, "DelegationCreated")
+                .to.emit(PowerloomDelegationold, "DelegationCreated")
                 .withArgs(addr1.address, 1, burnerWallet.address, await time.latest(), (await time.latest()) + DELEGATION_PERIOD);
         });
 
       it("Should fail with duplicate slot IDs", async function () {
             await expect(
-                powerloomDelegation.connect(addr1).createDelegation([1, 1], {
+                PowerloomDelegationold.connect(addr1).createDelegation([1, 1], {
                     value: DELEGATION_FEE * 2n // Use BigInt for multiplication
                 })
             ).to.be.revertedWith("Duplicate slot ID detected");
@@ -85,7 +84,7 @@ describe("PowerloomDelegation", function () {
 
         it("Should fail with no slotIds provided", async function () {
           await expect(
-            powerloomDelegation.connect(addr1).createDelegation([], {
+            PowerloomDelegationold.connect(addr1).createDelegation([], {
                 value: DELEGATION_FEE * 2n
             })
         ).to.be.revertedWith("No slots provided");
@@ -94,19 +93,19 @@ describe("PowerloomDelegation", function () {
         it("Should fail with too many slotIds provided", async function () {
           const slots = Array.from({ length: MAX_SLOTS + 1 }, (_, i) => i + 1);
           await expect(
-              powerloomDelegation.connect(addr1).createDelegation(slots, {
+              PowerloomDelegationold.connect(addr1).createDelegation(slots, {
                   value: DELEGATION_FEE * BigInt(MAX_SLOTS + 1)
               })
           ).to.be.revertedWith("Too many slots");
         });
 
         it("Should fail if slot is already delegated", async function () {
-          await powerloomDelegation.connect(addr1).createDelegation([1], {
+          await PowerloomDelegationold.connect(addr1).createDelegation([1], {
               value: DELEGATION_FEE
           });
 
           await expect(
-              powerloomDelegation.connect(addr1).createDelegation([1], {
+              PowerloomDelegationold.connect(addr1).createDelegation([1], {
                   value: DELEGATION_FEE
               })
           ).to.be.revertedWith("Slot already delegated");
@@ -114,7 +113,7 @@ describe("PowerloomDelegation", function () {
 
         it("Should fail with incorrect fee", async function () {
             await expect(
-                powerloomDelegation.connect(addr1).createDelegation([1], {
+                PowerloomDelegationold.connect(addr1).createDelegation([1], {
                     value: ethers.parseEther("3")
                 })
             ).to.be.revertedWith("Incorrect delegation fee");
@@ -122,7 +121,7 @@ describe("PowerloomDelegation", function () {
 
         it("Should fail if not slot owner", async function () {
             await expect(
-                powerloomDelegation.connect(addr2).createDelegation([1], {
+                PowerloomDelegationold.connect(addr2).createDelegation([1], {
                     value: DELEGATION_FEE
                 })
             ).to.be.revertedWith("Caller is not the slot owner");
@@ -131,19 +130,19 @@ describe("PowerloomDelegation", function () {
 
     describe("Burner Wallet Management", function () {
       it("Should fail if the burner wallet is zero address", async function () {
-        await expect(powerloomDelegation.updateBurnerWallet(ethers.ZeroAddress)).to.be.revertedWith(
+        await expect(PowerloomDelegationold.updateBurnerWallet(ethers.ZeroAddress)).to.be.revertedWith(
           "Invalid burner wallet address"
         );
       });
 
       it("Should update burner wallet correctly", async function () {
-        await powerloomDelegation.updateBurnerWallet(addr2.address);
-        expect(await powerloomDelegation.BURNER_WALLET()).to.equal(addr2.address);
+        await PowerloomDelegationold.updateBurnerWallet(addr2.address);
+        expect(await PowerloomDelegationold.BURNER_WALLET()).to.equal(addr2.address);
       });
 
       it("Should emit BurnerWalletUpdated event", async function () {
-        await expect(powerloomDelegation.updateBurnerWallet(addr2.address)).to.emit(
-          powerloomDelegation,
+        await expect(PowerloomDelegationold.updateBurnerWallet(addr2.address)).to.emit(
+          PowerloomDelegationold,
           "BurnerWalletUpdated"
         );
       });
@@ -151,13 +150,13 @@ describe("PowerloomDelegation", function () {
     
     describe("Fee and Period Management", function () {
       it("Should fail if new fee is zero", async function () {
-        await expect(powerloomDelegation.updateDelegationFee(0)).to.be.revertedWith(
+        await expect(PowerloomDelegationold.updateDelegationFee(0)).to.be.revertedWith(
           "Fee cannot be zero"
         );
       });
 
       it("Should fail if new period is zero", async function () {
-        await expect(powerloomDelegation.updateDelegationPeriod(0)).to.be.revertedWith(
+        await expect(PowerloomDelegationold.updateDelegationPeriod(0)).to.be.revertedWith(
           "Period cannot be zero"
         );
       });

@@ -4,9 +4,8 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 const { ethers } = pkg;
 
-describe("PowerloomDelegation", function () {
-    let PowerloomDelegation;
-    let powerloomDelegation;
+describe("PowerloomDelegationold", function () {
+    let PowerloomDelegationold;
     let mockPowerloomNodes;
     let MockPowerloomState;
     let mockPowerloomState;
@@ -37,9 +36,9 @@ describe("PowerloomDelegation", function () {
         MockPowerloomState = await ethers.getContractFactory("MockPowerloomState");
         mockPowerloomState = await MockPowerloomState.deploy();
 
-        // Deploy PowerloomDelegation
-        PowerloomDelegation = await ethers.getContractFactory("PowerloomDelegation");
-        powerloomDelegation = await PowerloomDelegation.deploy(
+        // Deploy PowerloomDelegationold
+        PowerloomDelegationold = await ethers.getContractFactory("PowerloomDelegationold");
+        PowerloomDelegationold = await PowerloomDelegationold.deploy(
             await mockPowerloomState.getAddress(),
             await mockPowerloomNodes.getAddress(),
             burnerWallet.address
@@ -49,7 +48,7 @@ describe("PowerloomDelegation", function () {
     describe("Pause Functionality", function () {
       it("Should pause and unpause correctly", async function () {
           // First pause the contract
-          await powerloomDelegation.pause();
+          await PowerloomDelegationold.pause();
   
           // Setup for delegation attempt
           await mockPowerloomNodes.setNodeOwner(1, addr1.address);
@@ -57,15 +56,15 @@ describe("PowerloomDelegation", function () {
   
           // Attempt to create delegation while paused
           await expect(
-              powerloomDelegation.connect(addr1).createDelegation([1], {
+              PowerloomDelegationold.connect(addr1).createDelegation([1], {
                   value: DELEGATION_FEE
               })
-          ).to.be.revertedWithCustomError(powerloomDelegation, "EnforcedPause");
+          ).to.be.revertedWithCustomError(PowerloomDelegationold, "EnforcedPause");
   
           // Unpause and try again
-          await powerloomDelegation.unpause();
+          await PowerloomDelegationold.unpause();
           await expect(
-              powerloomDelegation.connect(addr1).createDelegation([1], {
+              PowerloomDelegationold.connect(addr1).createDelegation([1], {
                   value: DELEGATION_FEE
               })
           ).to.not.be.reverted;
@@ -77,12 +76,12 @@ describe("PowerloomDelegation", function () {
       it("Should allow owner to withdraw fees", async function () {
           await mockPowerloomNodes.setNodeOwner(1, addr1.address);
           await mockPowerloomState.setSnapshotter(1, burnerWallet.address);
-          await powerloomDelegation.connect(addr1).createDelegation([1], {
+          await PowerloomDelegationold.connect(addr1).createDelegation([1], {
               value: DELEGATION_FEE
           });
 
           const initialBalance = await ethers.provider.getBalance(owner.address);
-          await powerloomDelegation.withdrawFees();
+          await PowerloomDelegationold.withdrawFees();
           const finalBalance = await ethers.provider.getBalance(owner.address);
           
           expect(finalBalance).to.be.gt(initialBalance);
@@ -91,38 +90,38 @@ describe("PowerloomDelegation", function () {
 
   describe("Non-owner Access Control", function() {
     it("should not allow non-owners to call pause", async function () {
-      await expect(powerloomDelegation.connect(addr1).pause()).to.be.revertedWithCustomError(
-        powerloomDelegation, // Check on the powerloomDelegation contract
+      await expect(PowerloomDelegationold.connect(addr1).pause()).to.be.revertedWithCustomError(
+        PowerloomDelegationold, // Check on the PowerloomDelegationold contract
         "OwnableUnauthorizedAccount"
       );
     });
     it("should not allow non-owners to call unpause", async function () {
-      await expect(powerloomDelegation.connect(addr1).unpause()).to.be.revertedWithCustomError(
-        powerloomDelegation, // Check on the powerloomDelegation contract
+      await expect(PowerloomDelegationold.connect(addr1).unpause()).to.be.revertedWithCustomError(
+        PowerloomDelegationold, // Check on the PowerloomDelegationold contract
         "OwnableUnauthorizedAccount"
       );
     });
     it("should not allow non-owners to call withdrawFees", async function () {
-      await expect(powerloomDelegation.connect(addr1).withdrawFees()).to.be.revertedWithCustomError(
-        powerloomDelegation, // Check on the powerloomDelegation contract
+      await expect(PowerloomDelegationold.connect(addr1).withdrawFees()).to.be.revertedWithCustomError(
+        PowerloomDelegationold, // Check on the PowerloomDelegationold contract
         "OwnableUnauthorizedAccount"
       );
     });
     it("should not allow non-owners to call updateBurnerWallet", async function () {
-      await expect(powerloomDelegation.connect(addr1).updateBurnerWallet(addr2.address)).to.be.revertedWithCustomError(
-        powerloomDelegation, // Check on the powerloomDelegation contract
+      await expect(PowerloomDelegationold.connect(addr1).updateBurnerWallet(addr2.address)).to.be.revertedWithCustomError(
+        PowerloomDelegationold, // Check on the PowerloomDelegationold contract
         "OwnableUnauthorizedAccount"
       );
     });
     it("should not allow non-owners to call updateDelegationFee", async function () {
-      await expect(powerloomDelegation.connect(addr1).updateDelegationFee(ethers.parseEther("1"))).to.be.revertedWithCustomError(
-        powerloomDelegation, // Check on the powerloomDelegation contract
+      await expect(PowerloomDelegationold.connect(addr1).updateDelegationFee(ethers.parseEther("1"))).to.be.revertedWithCustomError(
+        PowerloomDelegationold, // Check on the PowerloomDelegationold contract
         "OwnableUnauthorizedAccount"
       );
     });
     it("should not allow non-owners to call updateDelegationPeriod", async function () {
-      await expect(powerloomDelegation.connect(addr1).updateDelegationPeriod(60)).to.be.revertedWithCustomError(
-        powerloomDelegation, // Check on the powerloomDelegation contract
+      await expect(PowerloomDelegationold.connect(addr1).updateDelegationPeriod(60)).to.be.revertedWithCustomError(
+        PowerloomDelegationold, // Check on the PowerloomDelegationold contract
         "OwnableUnauthorizedAccount"
       );
     });
@@ -131,22 +130,22 @@ describe("PowerloomDelegation", function () {
   describe("Events", function(){
     it("Should emit FeeEvent when receiving ether", async function() {
       await expect(
-        owner.sendTransaction({ to: powerloomDelegation.target, value: ethers.parseEther("1") })
-      ).to.emit(powerloomDelegation, "FeeEvent");
+        owner.sendTransaction({ to: PowerloomDelegationold.target, value: ethers.parseEther("1") })
+      ).to.emit(PowerloomDelegationold, "FeeEvent");
     })
     it("Should emit FeeEvent when receiving ether through fallback", async function() {
       await expect(
-        owner.sendTransaction({ to: powerloomDelegation.target, value: ethers.parseEther("1"), data: "0x1234" })
-      ).to.emit(powerloomDelegation, "FeeEvent");
+        owner.sendTransaction({ to: PowerloomDelegationold.target, value: ethers.parseEther("1"), data: "0x1234" })
+      ).to.emit(PowerloomDelegationold, "FeeEvent");
     })
   })
   
   describe("Delegation Management - Edge Cases", function() {
     it("Should fail to check expiry of an inactive delegation", async function() {
-      await expect(powerloomDelegation.checkDelegationExpiry(1)).to.be.revertedWith("Delegation not active");
+      await expect(PowerloomDelegationold.checkDelegationExpiry(1)).to.be.revertedWith("Delegation not active");
     })
     it("Should return the right information if the delegation was never created", async function() {
-      const delegationInfo = await powerloomDelegation.connect(addr1).getDelegationInfo(1);
+      const delegationInfo = await PowerloomDelegationold.connect(addr1).getDelegationInfo(1);
       expect(delegationInfo.burnerWallet).to.equal(ethers.ZeroAddress);
       expect(delegationInfo.slotId).to.equal(0);
       expect(delegationInfo.active).to.be.false;
@@ -165,7 +164,7 @@ describe("PowerloomDelegation", function () {
               await mockPowerloomState.setSnapshotter(i + 1, burnerWallet.address);
           }
 
-          const tx = await powerloomDelegation.connect(addr1).createDelegation(slotIds, { value: totalFee });
+          const tx = await PowerloomDelegationold.connect(addr1).createDelegation(slotIds, { value: totalFee });
           const receipt = await tx.wait();
           const blockTime = await time.latest();
 
@@ -174,7 +173,7 @@ describe("PowerloomDelegation", function () {
               let found = false;
                for (const log of receipt.logs) {
                   try {
-                      const event = powerloomDelegation.interface.parseLog(log);
+                      const event = PowerloomDelegationold.interface.parseLog(log);
                       if (event && event.name === 'DelegationCreated' && event.args.delegator === addr1.address && event.args.slotId == i + 1) {
                           expect(event.args.burnerWallet).to.equal(burnerWallet.address);
                           expect(event.args.startTime).to.equal(blockTime);
@@ -187,7 +186,7 @@ describe("PowerloomDelegation", function () {
 
               }
               expect(found).to.be.true;
-              const delegationInfo = await powerloomDelegation.connect(addr1).getDelegationInfo(i + 1);
+              const delegationInfo = await PowerloomDelegationold.connect(addr1).getDelegationInfo(i + 1);
               expect(delegationInfo.burnerWallet).to.equal(burnerWallet.address);
               expect(delegationInfo.slotId).to.equal(i + 1);
               expect(delegationInfo.active).to.be.true;
@@ -205,7 +204,7 @@ describe("PowerloomDelegation", function () {
         }
 
         await expect(
-          powerloomDelegation.connect(addr1).createDelegation(slotIds, { value: incorrectFee })
+          PowerloomDelegationold.connect(addr1).createDelegation(slotIds, { value: incorrectFee })
         ).to.be.revertedWith("Incorrect delegation fee");
       });
   });
@@ -213,35 +212,35 @@ describe("PowerloomDelegation", function () {
   describe("Updating Fee and Period", function () {
       it("Should update the delegation fee and use it for new delegations", async function () {
           const newFee = ethers.parseEther("200");
-          await powerloomDelegation.updateDelegationFee(newFee);
-          expect(await powerloomDelegation.DELEGATION_FEE()).to.equal(newFee);
+          await PowerloomDelegationold.updateDelegationFee(newFee);
+          expect(await PowerloomDelegationold.DELEGATION_FEE()).to.equal(newFee);
 
           //check if the event is emitted
-          await expect(powerloomDelegation.updateDelegationFee(newFee)).to.emit(powerloomDelegation, "DelegationFeeUpdated");
+          await expect(PowerloomDelegationold.updateDelegationFee(newFee)).to.emit(PowerloomDelegationold, "DelegationFeeUpdated");
 
           // Create a new delegation with the updated fee
           await mockPowerloomNodes.setNodeOwner(3, addr1.address);
           await mockPowerloomState.setSnapshotter(3, burnerWallet.address);
-          await expect(powerloomDelegation.connect(addr1).createDelegation([3], {
+          await expect(PowerloomDelegationold.connect(addr1).createDelegation([3], {
             value: newFee
           })).to.not.be.reverted;
       });
 
       it("Should update the delegation period and use it for new delegations", async function () {
           const newPeriod = 60 * 60 * 24 * 15; // 15 days
-          await powerloomDelegation.updateDelegationPeriod(newPeriod);
-          expect(await powerloomDelegation.DELEGATION_PERIOD()).to.equal(newPeriod);
+          await PowerloomDelegationold.updateDelegationPeriod(newPeriod);
+          expect(await PowerloomDelegationold.DELEGATION_PERIOD()).to.equal(newPeriod);
 
           //check if the event is emitted
-          await expect(powerloomDelegation.updateDelegationPeriod(newPeriod)).to.emit(powerloomDelegation, "DelegationPeriodUpdated");
+          await expect(PowerloomDelegationold.updateDelegationPeriod(newPeriod)).to.emit(PowerloomDelegationold, "DelegationPeriodUpdated");
 
           // Create a new delegation with the updated period
           await mockPowerloomNodes.setNodeOwner(3, addr1.address);
           await mockPowerloomState.setSnapshotter(3, burnerWallet.address);
 
-          await powerloomDelegation.connect(addr1).createDelegation([3], { value: DELEGATION_FEE });
+          await PowerloomDelegationold.connect(addr1).createDelegation([3], { value: DELEGATION_FEE });
 
-          const delegationInfo = await powerloomDelegation.connect(addr1).getDelegationInfo(3);
+          const delegationInfo = await PowerloomDelegationold.connect(addr1).getDelegationInfo(3);
           expect(delegationInfo.endTime - delegationInfo.startTime).to.equal(newPeriod);
       });
 
@@ -249,18 +248,18 @@ describe("PowerloomDelegation", function () {
           // create a first delegation
           await mockPowerloomNodes.setNodeOwner(3, addr1.address);
           await mockPowerloomState.setSnapshotter(3, burnerWallet.address);
-          await powerloomDelegation.connect(addr1).createDelegation([3], { value: DELEGATION_FEE });
-          const delegationInfoBeforeUpdate = await powerloomDelegation.connect(addr1).getDelegationInfo(3);
+          await PowerloomDelegationold.connect(addr1).createDelegation([3], { value: DELEGATION_FEE });
+          const delegationInfoBeforeUpdate = await PowerloomDelegationold.connect(addr1).getDelegationInfo(3);
           const previousEndTime = delegationInfoBeforeUpdate.endTime;
           
           const newPeriod = 60 * 60 * 24 * 15; // 15 days
-          await powerloomDelegation.updateDelegationPeriod(newPeriod);
+          await PowerloomDelegationold.updateDelegationPeriod(newPeriod);
           
           //create another delegation
           await mockPowerloomNodes.setNodeOwner(4, addr1.address);
           await mockPowerloomState.setSnapshotter(4, burnerWallet.address);
-          await powerloomDelegation.connect(addr1).createDelegation([4], { value: DELEGATION_FEE });
-          const delegationInfoAfterUpdate = await powerloomDelegation.connect(addr1).getDelegationInfo(4);
+          await PowerloomDelegationold.connect(addr1).createDelegation([4], { value: DELEGATION_FEE });
+          const delegationInfoAfterUpdate = await PowerloomDelegationold.connect(addr1).getDelegationInfo(4);
           const newEndTime = delegationInfoAfterUpdate.endTime;
 
           expect(previousEndTime - delegationInfoBeforeUpdate.startTime).to.equal(DELEGATION_PERIOD); // The old one keeps the old period
@@ -273,21 +272,21 @@ describe("PowerloomDelegation", function () {
           // Create a delegation
           await mockPowerloomNodes.setNodeOwner(1, addr1.address);
           await mockPowerloomState.setSnapshotter(1, burnerWallet.address);
-          await powerloomDelegation.connect(addr1).createDelegation([1], {
+          await PowerloomDelegationold.connect(addr1).createDelegation([1], {
               value: DELEGATION_FEE
           });
 
           // Withdraw the fees for the first time
           const initialOwnerBalance = await ethers.provider.getBalance(owner.address);
-          const firstWithdrawTx = await powerloomDelegation.withdrawFees();
+          const firstWithdrawTx = await PowerloomDelegationold.withdrawFees();
           const balanceAfterFirstWithdraw = await ethers.provider.getBalance(owner.address);
           expect(balanceAfterFirstWithdraw).to.be.gt(initialOwnerBalance);
           
           //check that the event is emitted.
-          await expect(firstWithdrawTx).to.emit(powerloomDelegation, "FeeEvent");
+          await expect(firstWithdrawTx).to.emit(PowerloomDelegationold, "FeeEvent");
 
           // Check that there is no more fees to withdraw.
-          await expect(powerloomDelegation.withdrawFees()).to.be.revertedWith("No fees to withdraw");
+          await expect(PowerloomDelegationold.withdrawFees()).to.be.revertedWith("No fees to withdraw");
       });
   });
 });
