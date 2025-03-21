@@ -33,6 +33,11 @@ export default {
       url: "https://rpc.powerloom.network",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 7865, // Power network chain ID
+    },
+    power2: {
+      url: "https://rpc-v2.powerloom.network",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 7869, // Power network chain ID
     }
   },
   etherscan: {
