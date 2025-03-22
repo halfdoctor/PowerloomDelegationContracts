@@ -69,6 +69,10 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
         string eventType,
         uint256 timestamp
     );
+    event DelegationCheckFailed(
+        uint256 indexed slotId,
+        string reason
+    );
 
     /// @notice Constructor initializes the contract with required addresses
     /// @param _powerloomState Address of the PowerLoom state contract
@@ -347,9 +351,20 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
             // Check this slot's delegation for the owner
             DelegationInfo storage delegation = delegations[slotOwner][slotId];
 
-            require(delegation.active, "Delegation not active");
-            require(delegation.slotId == slotId, "slotId not delegated");
-            require(block.timestamp >= delegation.endTime, "Delegation not expired");
+            if (!delegation.active) {
+                emit DelegationCheckFailed(slotId, "Delegation not active");
+                continue;
+            }
+            
+            if (delegation.slotId != slotId) {
+                emit DelegationCheckFailed(slotId, "slotId not delegated");
+                continue;
+            }
+            
+            if (block.timestamp < delegation.endTime) {
+                emit DelegationCheckFailed(slotId, "Delegation not expired");
+                continue;
+            }
             
             // Only update if delegation exists, is active, and has expired
             if (delegation.slotId == slotId && delegation.active && block.timestamp >= delegation.endTime) {
