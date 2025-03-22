@@ -346,6 +346,10 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
             
             // Check this slot's delegation for the owner
             DelegationInfo storage delegation = delegations[slotOwner][slotId];
+
+            require(delegation.active, "Delegation not active");
+            require(delegation.slotId == slotId, "slotId not delegated");
+            require(block.timestamp >= delegation.endTime, "Delegation not expired");
             
             // Only update if delegation exists, is active, and has expired
             if (delegation.slotId == slotId && delegation.active && block.timestamp >= delegation.endTime) {
