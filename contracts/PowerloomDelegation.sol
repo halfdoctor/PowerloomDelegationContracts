@@ -303,10 +303,15 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     /// @notice Checks and updates expiry status for multiple delegations
     /// @notice Checks and updates expiry status for multiple delegations
     /// @param slotIds Array of slot IDs to check
-    function batchCheckDelegationExpiry(uint256[] calldata slotIds) external whenNotPaused {
+    /// @param delegator The address of the delegator
+    function batchCheckDelegationExpiry(address delegator, uint256[] calldata slotIds) external whenNotPaused {
         for (uint256 i = 0; i < slotIds.length; i++) {
             uint256 slotId = slotIds[i];
-            DelegationInfo storage delegation = delegations[msg.sender][slotId];
+            DelegationInfo storage delegation = delegations[delegator][slotId];
+
+            if (delegation.startTime == 0) {
+                continue;
+            }
 
             require(delegation.active, "Delegation not active");
 
@@ -317,7 +322,40 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
                     totalActiveDelegations--;
                 }
                 emit DelegationStateChanged(
-                    msg.sender,
+                    delegator,
+                    slotId,
+                    false,
+                    block.timestamp,
+                    "expired"
+                );
+            }
+        }
+    }
+
+    /// @notice Allows contract owner to check and update expired delegations for specific slot IDs
+    /// @param slotIds Array of slot IDs to check regardless of delegator
+    function ownerCheckSlotExpiry(uint256[] calldata slotIds) external onlyOwner {
+        for (uint256 i = 0; i < slotIds.length; i++) {
+            uint256 slotId = slotIds[i];
+            
+            // Get the owner of the slot directly from the PowerloomNodes contract
+            address slotOwner = powerloomNodes.nodeIdToOwner(slotId);
+            
+            // Skip if no owner found
+            if (slotOwner == address(0)) continue;
+            
+            // Check this slot's delegation for the owner
+            DelegationInfo storage delegation = delegations[slotOwner][slotId];
+            
+            // Only update if delegation exists, is active, and has expired
+            if (delegation.slotId == slotId && delegation.active && block.timestamp >= delegation.endTime) {
+                delegation.active = false;
+                if (totalActiveDelegations > 0) {
+                    totalActiveDelegations--;
+                }
+                
+                emit DelegationStateChanged(
+                    slotOwner,
                     slotId,
                     false,
                     block.timestamp,
