@@ -28,7 +28,8 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     uint256 public constant MAX_SLOTS_PER_DELEGATION = 10;
 
     mapping(address => mapping(uint256 => DelegationInfo)) public delegations;
-    mapping(address => mapping(uint256 => bool)) private userSlotIdsMap;
+    mapping(address => uint256[]) private userSlotIds;
+    mapping(address => mapping(uint256 => uint256)) private slotIdToIndex; // Maps slotId to its index in the array
 
     struct DelegationInfo {
         address burnerWallet;
@@ -161,7 +162,7 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     /// @notice Checks and updates delegation expiry status
     /// @param slotId The ID of the slot to check
     function checkDelegationExpiry(uint256 slotId) external whenNotPaused {
-        require(userSlotIdsMap[msg.sender][slotId], "Slot ID not delegated to user");
+        require(slotIdToIndex[msg.sender][slotId] < userSlotIds[msg.sender].length, "Slot ID not delegated to user");
         DelegationInfo storage delegation = delegations[msg.sender][slotId];
         require(delegation.active, "Delegation not active");
 
@@ -170,6 +171,10 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
             if (totalActiveDelegations > 0) {
                 totalActiveDelegations--;
             }
+            
+            // Don't remove completely, just mark as inactive
+            // If you want to remove completely, uncomment the next line:
+            // _removeUserSlotId(msg.sender, slotId);
             
             emit DelegationStateChanged(
                 msg.sender,
@@ -280,7 +285,7 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     /// @notice Allows a user to manually cancel a delegation
     /// @param slotId The ID of the slot to cancel delegation for
     function cancelDelegation(uint256 slotId) external nonReentrant whenNotPaused {
-        require(userSlotIdsMap[msg.sender][slotId], "Slot ID not delegated to user");
+        require(slotIdToIndex[msg.sender][slotId] < userSlotIds[msg.sender].length, "Slot ID not delegated to user");
         DelegationInfo storage delegation = delegations[msg.sender][slotId];
         require(delegation.active, "Delegation not active");
 
@@ -288,7 +293,10 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
         address slotOwner = powerloomNodes.nodeIdToOwner(slotId);
         require(slotOwner == msg.sender, "Caller is not the slot owner");
         delegation.active = false;
-        userSlotIdsMap[msg.sender][slotId] = false;
+        
+        // Use the new _removeUserSlotId function instead
+        _removeUserSlotId(msg.sender, slotId);
+        
         if (totalActiveDelegations > 0) {
             totalActiveDelegations = totalActiveDelegations - 1;
         }
@@ -311,13 +319,16 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     function batchCheckDelegationExpiry(address delegator, uint256[] calldata slotIds) external whenNotPaused {
         for (uint256 i = 0; i < slotIds.length; i++) {
             uint256 slotId = slotIds[i];
-            DelegationInfo storage delegation = delegations[delegator][slotId];
-
-            if (delegation.startTime == 0) {
+            
+            // Skip if slot is not delegated
+            if (slotIdToIndex[delegator][slotId] >= userSlotIds[delegator].length) {
                 continue;
             }
-
-            require(delegation.active, "Delegation not active");
+            
+            DelegationInfo storage delegation = delegations[delegator][slotId];
+            if (!delegation.active) {
+                continue;
+            }
 
             if (block.timestamp >= delegation.endTime) {
                 delegation.active = false;
@@ -325,6 +336,11 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
                 if (totalActiveDelegations > 0) {
                     totalActiveDelegations--;
                 }
+                
+                // Don't remove completely, just mark as inactive
+                // If you want to remove completely, uncomment the next line:
+                // _removeUserSlotId(delegator, slotId);
+                
                 emit DelegationStateChanged(
                     delegator,
                     slotId,
@@ -348,6 +364,12 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
             // Skip if no owner found
             if (slotOwner == address(0)) continue;
             
+            // Skip if slot is not delegated by this owner
+            if (slotIdToIndex[slotOwner][slotId] >= userSlotIds[slotOwner].length) {
+                emit DelegationCheckFailed(slotId, "slotId not delegated");
+                continue;
+            }
+            
             // Check this slot's delegation for the owner
             DelegationInfo storage delegation = delegations[slotOwner][slotId];
 
@@ -356,31 +378,28 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
                 continue;
             }
             
-            if (delegation.slotId != slotId) {
-                emit DelegationCheckFailed(slotId, "slotId not delegated");
-                continue;
-            }
-            
             if (block.timestamp < delegation.endTime) {
                 emit DelegationCheckFailed(slotId, "Delegation not expired");
                 continue;
             }
             
-            // Only update if delegation exists, is active, and has expired
-            if (delegation.slotId == slotId && delegation.active && block.timestamp >= delegation.endTime) {
-                delegation.active = false;
-                if (totalActiveDelegations > 0) {
-                    totalActiveDelegations--;
-                }
-                
-                emit DelegationStateChanged(
-                    slotOwner,
-                    slotId,
-                    false,
-                    block.timestamp,
-                    "expired"
-                );
+            // Update the delegation
+            delegation.active = false;
+            if (totalActiveDelegations > 0) {
+                totalActiveDelegations--;
             }
+            
+            // Don't remove completely, just mark as inactive
+            // If you want to remove completely, uncomment the next line:
+            // _removeUserSlotId(slotOwner, slotId);
+            
+            emit DelegationStateChanged(
+                slotOwner,
+                slotId,
+                false,
+                block.timestamp,
+                "expired"
+            );
         }
     }
 
@@ -394,44 +413,60 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     /// @notice Adds a slot ID to user's delegation list
     /// @dev Internal function called during delegation creation
     function _addUserSlotId(address user, uint256 slotId) internal {
-        // Add slot ID to the user's mapping
-        userSlotIdsMap[user][slotId] = true;
+        // Initialize with an invalid index value (greater than any possible array length)
+        if (slotIdToIndex[user][slotId] >= userSlotIds[user].length) {
+            slotIdToIndex[user][slotId] = userSlotIds[user].length;
+            userSlotIds[user].push(slotId);
+        }
+    }
+
+    // Remove a slot ID when delegation is canceled or expires
+    function _removeUserSlotId(address user, uint256 slotId) internal {
+        uint256 index = slotIdToIndex[user][slotId];
+        if (index < userSlotIds[user].length && userSlotIds[user][index] == slotId) {
+            uint256 lastIndex = userSlotIds[user].length - 1;
+            
+            // If it's not the last element, move the last element to this position
+            if (index != lastIndex) {
+                uint256 lastSlotId = userSlotIds[user][lastIndex];
+                userSlotIds[user][index] = lastSlotId;
+                slotIdToIndex[user][lastSlotId] = index;
+            }
+            
+            // Remove the last element
+            userSlotIds[user].pop();
+            
+            // Set to an invalid index value
+            slotIdToIndex[user][slotId] = userSlotIds[user].length + 1;
+        }
     }
 
     /// @notice Gets the total number of delegations for a user
     /// @param user Address of the user to query
     /// @return Total number of delegations (active and inactive)
     function getTotalUserDelegations(address user) internal view returns (uint256) {
-        uint256 count = 0;
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                count++;
-            }
-        }
-        return count;
+        return userSlotIds[user].length;
     }
 
     function _getDelegationStatuses(address user) internal view returns (DelegationStatus[] memory) {
-        uint256 totalDelegations = getTotalUserDelegations(user);
+        uint256[] memory slotIds = userSlotIds[user];
+        uint256 totalDelegations = slotIds.length;
         DelegationStatus[] memory statuses = new DelegationStatus[](totalDelegations);
-        uint256 currentIndex = 0;
 
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                DelegationInfo memory delegation = delegations[user][i];
-                uint256 timeRemaining = 0;
-                if (delegation.active && block.timestamp < delegation.endTime) {
-                    timeRemaining = delegation.endTime - block.timestamp;
-                }
-
-                statuses[currentIndex] = DelegationStatus({
-                    slotId: i,
-                    isActive: delegation.active && block.timestamp < delegation.endTime,
-                    endTime: delegation.endTime,
-                    timeRemaining: timeRemaining
-                });
-                currentIndex++;
+        for (uint256 i = 0; i < totalDelegations; i++) {
+            uint256 slotId = slotIds[i];
+            DelegationInfo memory delegation = delegations[user][slotId];
+            uint256 timeRemaining = 0;
+            if (delegation.active && block.timestamp < delegation.endTime) {
+                timeRemaining = delegation.endTime - block.timestamp;
             }
+
+            statuses[i] = DelegationStatus({
+                slotId: slotId,
+                isActive: delegation.active && block.timestamp < delegation.endTime,
+                endTime: delegation.endTime,
+                timeRemaining: timeRemaining
+            });
         }
 
         return statuses;
@@ -455,16 +490,15 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     /// @param user Address of the user to query
     /// @return DelegationStatus[] Array of active delegation status information
     function getActiveDelegations(address user) external view returns (DelegationStatus[] memory) {
-        // uint256 totalDelegations = getTotalUserDelegations(user);
+        uint256[] memory slotIds = userSlotIds[user];
         uint256 activeCount = 0;
 
         // First, count active delegations
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                DelegationInfo memory delegation = delegations[user][i];
-                if (delegation.active && block.timestamp < delegation.endTime) {
-                    activeCount++;
-                }
+        for (uint256 i = 0; i < slotIds.length; i++) {
+            uint256 slotId = slotIds[i];
+            DelegationInfo memory delegation = delegations[user][slotId];
+            if (delegation.active && block.timestamp < delegation.endTime) {
+                activeCount++;
             }
         }
 
@@ -473,18 +507,17 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
 
         // Fill array with active delegations
         uint256 currentIndex = 0;
-        for (uint256 i = 0; i < MAX_SLOTS_PER_DELEGATION; i++) {
-            if (userSlotIdsMap[user][i]) {
-                DelegationInfo memory delegation = delegations[user][i];
-                if (delegation.active && block.timestamp < delegation.endTime) {
-                    activeStatuses[currentIndex] = DelegationStatus({
-                        slotId: i,
-                        isActive: delegation.active && block.timestamp < delegation.endTime,
-                        endTime: delegation.endTime,
-                        timeRemaining: delegation.endTime - block.timestamp
-                    });
-                    currentIndex++;
-                }
+        for (uint256 i = 0; i < slotIds.length; i++) {
+            uint256 slotId = slotIds[i];
+            DelegationInfo memory delegation = delegations[user][slotId];
+            if (delegation.active && block.timestamp < delegation.endTime) {
+                activeStatuses[currentIndex] = DelegationStatus({
+                    slotId: slotId,
+                    isActive: true,
+                    endTime: delegation.endTime,
+                    timeRemaining: delegation.endTime - block.timestamp
+                });
+                currentIndex++;
             }
         }
 
@@ -495,7 +528,7 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     /// @param slotId The ID of the slot to query
     /// @return DelegationInfo struct containing delegation details
     function getDelegationInfo(uint256 slotId) external view returns (DelegationInfo memory) {
-        require(userSlotIdsMap[msg.sender][slotId], "Slot ID not delegated to user");
+        require(slotIdToIndex[msg.sender][slotId] < userSlotIds[msg.sender].length, "Slot ID not delegated to user");
         return delegations[msg.sender][slotId];
     }
 
@@ -510,7 +543,7 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     /// @param slotId The ID of the slot to check
     /// @return Remaining time in seconds, 0 if expired or inactive
     function getDelegationTimeRemaining(uint256 slotId) external view returns (uint256) {
-        require(userSlotIdsMap[msg.sender][slotId], "Slot ID not delegated to user");
+        require(slotIdToIndex[msg.sender][slotId] < userSlotIds[msg.sender].length, "Slot ID not delegated to user");
         DelegationInfo memory delegation = delegations[msg.sender][slotId];
         if (!delegation.active || block.timestamp >= delegation.endTime) {
             return 0;
@@ -579,16 +612,19 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
     /// @notice Internal function to check and decrement expired delegations
     /// @param user Address of the user to check delegations for
     function _checkAndDecrementExpiredDelegations(address user) private {
-        DelegationStatus[] memory userDelegations = _getUserDelegations(user);
-        for (uint256 i = 0; i < userDelegations.length; i++) {
-            uint256 slotId = userDelegations[i].slotId;
+        uint256[] memory slotIds = userSlotIds[user];
+        for (uint256 i = 0; i < slotIds.length; i++) {
+            uint256 slotId = slotIds[i];
             DelegationInfo storage delegation = delegations[user][slotId];
             address slotOwner = powerloomNodes.nodeIdToOwner(slotId);
             if (delegation.active && block.timestamp >= delegation.endTime && slotOwner == user) {
                 delegation.active = false;
                 if (totalActiveDelegations > 0) {
-                	totalActiveDelegations--;
+                    totalActiveDelegations--;
                 }
+                // Note: We don't remove the slot ID from the array here since it's still considered a delegation,
+                // just an inactive one. If you want to completely remove expired delegations, add _removeUserSlotId here.
+                
                 emit DelegationStateChanged(
                     user,
                     slotId,
