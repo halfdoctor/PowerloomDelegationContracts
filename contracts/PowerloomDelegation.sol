@@ -210,14 +210,23 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
             require(success, "ETH transfer failed");
         }
         
-        if (!delegation.active && block.timestamp > delegation.endTime) {
-                totalActiveDelegations ++;
-            }
-    
+        // Increment totalActiveDelegations if delegation was inactive
+        if (!delegation.active) {
+            totalActiveDelegations++;
+            delegation.active = true;
+        }
+
         // Update delegation period
-        delegation.startTime = block.timestamp;
-        delegation.endTime = block.timestamp + delegationPeriodInDays * 1 days;
-        delegation.active = true; // Ensure it's reactivated
+        // If delegation is active and not expired, extend from the current end time
+        // Otherwise, start a new period from current block.timestamp
+        if (delegation.active && delegation.endTime > block.timestamp) {
+            // Extend from current end time for active delegations
+            delegation.endTime = delegation.endTime + delegationPeriodInDays * 1 days;
+        } else {
+            // Start fresh for inactive or expired delegations
+            delegation.startTime = block.timestamp;
+            delegation.endTime = block.timestamp + delegationPeriodInDays * 1 days;
+        }
         
         emit DelegationStateChanged(
             msg.sender,
@@ -251,20 +260,27 @@ contract PowerloomDelegation is Ownable, ReentrancyGuard, Pausable {
             require(slotId < 10001, "Slot ID exceeds maximum limit");
             DelegationInfo storage delegation = delegations[msg.sender][slotId];
             
-            //require(delegation.slotId == slotId, "Delegation does not exist");
-            
             // Check if caller is still the owner of the slot
             address slotOwner = powerloomNodes.nodeIdToOwner(slotId);
             require(slotOwner == msg.sender, "Caller is not the slot owner");
 
-            if (!delegation.active && block.timestamp > delegation.endTime) {
-                totalActiveDelegations ++;
+            // Increment totalActiveDelegations if delegation was inactive
+            if (!delegation.active) {
+                totalActiveDelegations++;
+                delegation.active = true;
             }
 
             // Update delegation period
-            delegation.startTime = block.timestamp;
-            delegation.endTime = block.timestamp + delegationPeriodInDays * 1 days;
-            delegation.active = true;
+            // If delegation is active and not expired, extend from the current end time
+            // Otherwise, start a new period from current block.timestamp
+            if (delegation.active && delegation.endTime > block.timestamp) {
+                // Extend from current end time for active delegations
+                delegation.endTime = delegation.endTime + delegationPeriodInDays * 1 days;
+            } else {
+                // Start fresh for inactive or expired delegations
+                delegation.startTime = block.timestamp;
+                delegation.endTime = block.timestamp + delegationPeriodInDays * 1 days;
+            }
             
             emit DelegationStateChanged(
                 msg.sender,
